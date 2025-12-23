@@ -3,9 +3,8 @@ import yfinance as yf
 import requests
 import pandas as pd
 import datetime
-import html
 import io
-import re
+import re  # ✅ 關鍵：用來過濾 "河流圖" 文字
 from bs4 import BeautifulSoup
 
 # ==========================================
@@ -17,10 +16,14 @@ st.title("😎 帥哥城 AI 投顧 (網頁版)")
 st.write("👉 輸入股票代碼，AI 幫你從技術面、籌碼面、財報面進行健檢。")
 
 # ==========================================
-# 🕵️‍♂️ 數據抓取模組 (直接沿用你原本的邏輯)
+# 🕵️‍♂️ 數據抓取模組 (已修復 Bug)
 # ==========================================
 
 def get_yahoo_web_data(stock_id):
+    """
+    [✅ 修復版] 抓取本益比/殖利率
+    修正：使用 Regex 強制提取數字，避免抓到 '河流圖'
+    """
     try:
         url = f"https://tw.stock.yahoo.com/quote/{stock_id}"
         headers = { "User-Agent": "Mozilla/5.0" }
@@ -35,11 +38,12 @@ def get_yahoo_web_data(stock_id):
             data['Name'] = match.group(1).strip() if match else stock_id
         except: data['Name'] = stock_id
 
-        # 抓數據
+        # 抓數據 (強制過濾中文)
         def find_val(keyword):
             try:
                 for item in soup.find_all('li'):
                     if keyword in item.text:
+                        # ✅ 只抓取數字 (包含小數點)
                         match = re.search(r'(-?\d+\.\d+|-?\d+)', item.text)
                         if match: return match.group(0)
             except: pass
@@ -51,7 +55,7 @@ def get_yahoo_web_data(stock_id):
         if data['Yield'] == "N/A": data['Yield'] = find_val("現金殖利率")
         
         return data
-    except: return {'Name': stock_id}
+    except: return {'Name': stock_id, 'PE': 'N/A', 'PB': 'N/A', 'Yield': 'N/A'}
 
 def get_mops_insider(stock_id):
     try:
@@ -116,13 +120,24 @@ def generate_report(stock_id):
     score = 50
     reasons = []
     
-    # 評分邏輯 (簡化版)
-    if price > today['MA20']: score += 10; reasons.append("站上月線 (短多)")
-    else: score -= 10; reasons.append("跌破月線 (短空)")
-    if price > today['MA60']: score += 10; reasons.append("站穩季線 (長多)")
-    else: score -= 10
+    # ✅ 修正後的技術面評分邏輯 (補上了冒號和條件)
+    if price > today['MA20']: 
+        score += 10
+        reasons.append("站上月線 (短多)")
+    else: 
+        score -= 10
+        reasons.append("跌破月線 (短空)")
+        
+    if price > today['MA60']: 
+        score += 10
+        reasons.append("站穩季線 (長多)")
+    else: 
+        score -= 10
+        
     if today['MACD'] > today['Signal']: score += 5
-    if today['RSI'] < 25: score += 10; reasons.append("RSI超賣 (醞釀反彈)")
+    if today['RSI'] < 25: 
+        score += 10
+        reasons.append("RSI超賣 (醞釀反彈)")
     
     chip_msg = "數據不足"
     if chips:
